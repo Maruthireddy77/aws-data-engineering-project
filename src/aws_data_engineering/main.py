@@ -4,6 +4,11 @@ from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import StringType, StructField, StructType
 
+from aws_data_engineering.config import (
+    INPUT_PATH,
+    LOG_LEVEL,
+    OUTPUT_PATH,
+)
 from aws_data_engineering.transformations import (
     add_quality_checks,
     create_silver_customers,
@@ -45,7 +50,7 @@ def read_customers(
 
 def main():
     logging.basicConfig(
-        level=logging.INFO,
+        level=LOG_LEVEL,
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
 
@@ -56,11 +61,8 @@ def main():
     try:
         spark = create_spark_session()
 
-        input_path = "data/raw/customers.csv"
-        output_path = "data/processed/customers"
-
-        logger.info("Reading customer data from %s", input_path)
-        customers_df = read_customers(spark, input_path)
+        logger.info("Reading customer data from %s", INPUT_PATH)
+        customers_df = read_customers(spark, INPUT_PATH)
 
         logger.info("Applying data quality checks")
         checked_df = add_quality_checks(customers_df)
@@ -89,10 +91,10 @@ def main():
 
         logger.info(
             "Writing Silver customer data to %s",
-            output_path,
+            OUTPUT_PATH,
         )
 
-        silver_df.write.mode("overwrite").parquet(output_path)
+        silver_df.write.mode("overwrite").parquet(OUTPUT_PATH)
 
         logger.info("Customer pipeline completed successfully")
 
