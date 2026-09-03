@@ -1,11 +1,20 @@
+import logging
+
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import StringType, StructField, StructType
 
+from aws_data_engineering.config import (
+    INPUT_PATH,
+    LOG_LEVEL,
+    OUTPUT_PATH,
+)
 from aws_data_engineering.transformations import (
     add_quality_checks,
     create_silver_customers,
 )
+
+logger = logging.getLogger(__name__)
 
 CUSTOMER_SCHEMA = StructType(
     [
@@ -40,40 +49,64 @@ def read_customers(
 
 
 def main():
-    spark = create_spark_session()
-
-    input_path = "data/raw/customers.csv"
-
-    customers_df = read_customers(spark, input_path)
-
-    checked_df = add_quality_checks(customers_df)
-
-    valid_df = checked_df.filter(
-        F.col("reject_reason").isNull()
+    logging.basicConfig(
+        level=LOG_LEVEL,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
 
-    rejected_df = checked_df.filter(
-        F.col("reject_reason").isNotNull()
-    )
+    logger.info("Customer pipeline started")
 
-    silver_df = create_silver_customers(valid_df)
+    spark = None
 
-    print("VALID RECORDS")
-    valid_df.show(truncate=False)
+    try:
+        spark = create_spark_session()
 
-    print("REJECTED RECORDS")
-    rejected_df.show(truncate=False)
+        logger.info("Reading customer data from %s", INPUT_PATH)
+        customers_df = read_customers(spark, INPUT_PATH)
 
-    print("SILVER CUSTOMERS")
-    silver_df.show(truncate=False)
+        logger.info("Applying data quality checks")
+        checked_df = add_quality_checks(customers_df)
 
-    silver_df.printSchema()
+        valid_df = checked_df.filter(
+            F.col("reject_reason").isNull()
+        )
 
-    silver_df.write.mode("overwrite").parquet(
-        "data/processed/customers"
-    )
+        rejected_df = checked_df.filter(
+            F.col("reject_reason").isNotNull()
+        )
 
-    spark.stop()
+        logger.info("Creating Silver customer dataset")
+        silver_df = create_silver_customers(valid_df)
+
+        print("VALID RECORDS")
+        valid_df.show(truncate=False)
+
+        print("REJECTED RECORDS")
+        rejected_df.show(truncate=False)
+
+        print("SILVER CUSTOMERS")
+        silver_df.show(truncate=False)
+
+        silver_df.printSchema()
+
+        logger.info(
+            "Writing Silver customer data to %s",
+            OUTPUT_PATH,
+        )
+
+        silver_df.write.mode("overwrite").parquet(OUTPUT_PATH)
+
+        logger.info("Customer pipeline completed successfully")
+
+    except Exception:
+        logger.exception("Customer pipeline failed")
+        raise
+
+    finally:
+        if spark is not None:
+            logger.info("Stopping Spark session")
+            spark.stop()
+
 
 if __name__ == "__main__":
     main()
